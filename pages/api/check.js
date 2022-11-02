@@ -1,9 +1,7 @@
-import { token } from '../../config';
-
-export default async(req, res) => {
+export default function handler(req, res) {
 	res.setHeader('Access-Control-Allow-Origin', '*');
-	if (req.headers.authorization != token) {
-		return res.status(401).json({ message: 'Invalid Authentication Credentials' });
+	if (req.headers.authorization != process.env.TOKEN) {
+		return res.status(401).json("Invalid Authentication Credentials");
 	}
-  res.status(200).send('Autorized');
+  return res.status(200).json('Autorized');
 }

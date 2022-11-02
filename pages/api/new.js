@@ -1,13 +1,11 @@
-import { CRUDHost, CRUDToken, telegramBotToken, telegramIDGroup } from '../../config';
-
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if ([1, 2, 3, 4, 5].includes(req.body.level) && req.body.text.length > 0 && req.body.text.length < 250) {
-    fetch(CRUDHost + '/api/create', {
+    return fetch(process.env.CRUD_HOST + '/api/create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': CRUDToken
+        'Authorization': process.env.CRUD_TOKEN
       },
       body: JSON.stringify({
         table: {
@@ -25,26 +23,39 @@ export default function handler(req, res) {
         }
       })
     })
-    .then(function (response) {
-      let message;
-      if (req.body.source) {
-        message = "Um novo FeedbackForWeb foi registrado %0aSource: " + req.body.source + " %0aID: " + response.data + "%0aLevel: " + req.body.level;
+    .then(async function () {
+      const data = await response.json();
+      if (process.env.SENDER_HOST != undefined) {
+        let message;
+        if (req.body.source) {
+          message = "Um novo FeedbackForWeb foi registrado %0aSource: " + req.body.source + " %0aID: " + data + "%0aLevel: " + req.body.level;
+        } else {
+          message = "Um novo FeedbackForWeb foi registrado %0aID: " + data + "%0aLevel: " + req.body.level;
+        }
+        return fetch(process.env.SENDER_HOST + '/api/telegram', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': process.env.SENDER_TOKEN
+          },
+          body: JSON.stringify({
+            message: message
+          })
+        })
+        .then(function () {
+          res.status(200).json('Feedback registred.');
+        })
+        .catch(function (error) {
+          res.status(500).json(error);
+        });
       } else {
-        message = "Um novo FeedbackForWeb foi registrado %0aID: " + response.data + "%0aLevel: " + req.body.level;
+        res.status(200).json('Feedback registred.');
       }
-      fetch('https://api.telegram.org/bot' + telegramBotToken + '/sendMessage?chat_id=' + telegramIDGroup + '&text=' + message).catch(function (error) {
-        res.status(500).send(error);
-      });
-      res.status(200).send(response.data);
     })
     .catch(function (error) {
-      if (error.response.status == 400) {
-        res.status(400).send(error.response.data);
-      } else {
-        res.status(500).send(error);
-      }
+      res.status(500).json(error);
     });
   } else {
-    res.status(400).send('Information send is incorrect.');
+    return res.status(401).json('Information send is incorrect.');
   }
 }
