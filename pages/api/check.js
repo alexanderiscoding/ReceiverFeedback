@@ -1,7 +1,6 @@
 export default function handler(req, res) {
-	res.setHeader('Access-Control-Allow-Origin', '*');
 	if (req.headers.authorization != process.env.TOKEN) {
 		return res.status(401).json("Invalid Authentication Credentials");
 	}
-  return res.status(200).json('Autorized');
+	return res.status(200).json('Autorized');
 }
