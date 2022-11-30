@@ -158,7 +158,6 @@ export default async function handler(req, res) {
       if (salved) {
         if (process.env.SENDER_HOST) {
           let structure = makerNotification(req.headers['user-agent'], req.body.application, req.body.version, req.body.message, data, token, req.headers.host);
-          console.log(structure);
           let sended = await sendNotification(structure);
           if (sended) {
             res.status(200).json(data);
