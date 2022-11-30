@@ -1,3 +1,5 @@
+import { makerSender } from '../../lib/senders';
+
 async function update(id) {
   return fetch(process.env.CLOUD_HOST + '/api/database/update', {
     method: 'POST',
@@ -18,6 +20,64 @@ async function update(id) {
     console.log(error);
     return false;
   });
+}
+
+function makerNotification(agent, application, version, message, data, token, host) {
+  const parser = require('ua-parser-js');
+  let ua = parser(agent);
+  let structure;
+  if (ua.device.type == 'mobile') {
+    structure = makerSender(
+      application,
+      version,
+      ua.device.vendor,
+      ua.device.model,
+      ua.os.name,
+      ua.os.version,
+      null,
+      message,
+      data,
+      token,
+      host,
+      process.env.SENDER_SERVICE,
+      process.env.SENDER_MODE
+    );
+  } else {
+    structure = makerSender(
+      application,
+      version,
+      ua.engine.name,
+      ua.engine.version,
+      ua.os.name,
+      ua.os.version,
+      ua.cpu.architecture,
+      message,
+      data,
+      token,
+      host,
+      process.env.SENDER_SERVICE,
+      process.env.SENDER_MODE
+    );
+  }
+  return structure;
+}
+
+async function sendNotification(structure) {
+  let sender;
+  await fetch(process.env.SENDER_HOST + structure[0].url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': process.env.SENDER_TOKEN
+    },
+    body: JSON.stringify(structure[1])
+  }).then(function () {
+    sender = true;
+  }).catch(function (error) {
+    console.log(error);
+    sender = false;
+  });
+  return sender;
 }
 
 async function device(agent, ip) {
@@ -92,14 +152,27 @@ export default async function handler(req, res) {
           token: token
         }
       })
-    }).then(async function () {
+    }).then(async function (response) {
+      const data = await response.json();
       let salved = await update(id);
       if (salved) {
-        res.status(200).json("Information created");
+        if (process.env.SENDER_HOST) {
+          let structure = makerNotification(req.headers['user-agent'], req.body.application, req.body.version, req.body.message, data, token, req.headers.host);
+          console.log(structure);
+          let sended = await sendNotification(structure);
+          if (sended) {
+            res.status(200).json(data);
+          } else {
+            res.status(500).json('Send notification not working.');
+          }
+        } else {
+          res.status(200).json(data);
+        }
       } else {
         res.status(500).json("Update information in Cloud failed.");
       }
-    }).catch(function () {
+    }).catch(function (error) {
+      console.log(error);
       res.status(500).json("Insert information in Cloud failed.");
     });
   } else {
