@@ -1,4 +1,4 @@
-async function create(id, date) {
+async function create(ipHash, date) {
   return fetch(process.env.CLOUD_HOST + '/api/database/create', {
     method: 'POST',
     headers: {
@@ -7,7 +7,7 @@ async function create(id, date) {
     },
     body: JSON.stringify({
       name: "ReceiverFeedback",
-      id: id,
+      id: ipHash,
       column: {
         timestamp: date
       }
@@ -20,7 +20,11 @@ async function create(id, date) {
   });
 }
 
-async function check(access, id, date, tag) {
+async function check(access, ip, date, tag) {
+  const { createHash } = await import('node:crypto');
+  const hash = createHash('sha256');
+  hash.update(ip);
+  let ipHash = hash.copy().digest('hex');
   return fetch(process.env.CLOUD_HOST + '/api/database/read', {
     method: 'POST',
     headers: {
@@ -28,26 +32,34 @@ async function check(access, id, date, tag) {
       'Authorization': process.env.CLOUD_TOKEN
     },
     body: JSON.stringify({
-      id: 'ReceiverFeedback/' + id
+      id: 'ReceiverFeedback/' + ipHash
     })
   }).then(async function (response) {
     const data = await response.json();
     if (access == 1) {
-      if (!data) {
-        return false;
+      if (data) {
+        if (data.timestamp == tag) {
+          if (!data.feedback) {
+            return true;
+          }
+        } else {
+          return false;
+        }
+      } else {
+        let created = await create(ipHash, date);
+        if (created) {
+          return true;
+        } else {
+          return false;
+        }
       }
-      if (data.timestamp == tag) {
+    } else {
+      if (data) {
         if (!data.feedback) {
           return true;
         }
       } else {
-        return false;
-      }
-    } else {
-      if (data) {
-        return false;
-      } else {
-        let created = await create(id, date);
+        let created = await create(ipHash, date);
         if (created) {
           return true;
         } else {
@@ -65,9 +77,6 @@ async function device(agent, ip) {
   const { createHash } = await import('node:crypto');
   const parser = require('ua-parser-js');
   let ua = parser(agent);
-  if (!ip) {
-    return false;
-  }
   if (ua.device.type == 'mobile') {
     if ([ua.device.vendor, ua.device.model, ua.os.name, ua.os.version].includes(undefined)) {
       return false;
@@ -95,35 +104,29 @@ async function tagHash(id, date) {
 }
 
 export default async function handler(req, res) {
-  const date = new Date().getTime() + 30 * 1000;
+  if ([req.headers['user-agent'], req.headers['x-vercel-forwarded-for']].includes(undefined)) {
+    return res.status(406).json("Missing Information");
+  }
+  const date = Date.now() + 30 * 1000;
+  let id = await device(req.headers['user-agent'], req.headers['x-vercel-forwarded-for']);
+  if (!id) {
+    return res.status(401).json("Invalid Device Request");
+  }
   if (req.headers.authorization) {
     if (req.headers.authorization != process.env.ACCESS_TOKEN) {
       return res.status(401).json("Invalid Authentication Credentials");
     }
-    let id = await device(req.headers['user-agent'], req.headers['x-vercel-forwarded-for']);
-    if (!id) {
-      return res.status(401).json("Invalid Device Request");
-    }
-    let approved = await check(0, id, date);
+    let approved = await check(0, req.headers['x-vercel-forwarded-for'], date);
     if (!approved) {
-      return res.status(401).json("Invalid Request");
+      return res.status(401).json("Invalid Authentication Credentials");
     }
-    let hash = await tagHash(id, String(date));
-    return res.status(200).json({ tag: date, hash: hash });
   } else {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    let id = await device(req.headers['user-agent'], req.headers['x-vercel-forwarded-for']);
-    if (!id) {
-      return res.status(401).json("Invalid Device Request");
-    }
-    if (!req.body.tag) {
-      return res.status(401).json("Invalid Request");
-    }
-    let approved = await check(1, id, date, req.body.tag);
+    let approved = await check(1, req.headers['x-vercel-forwarded-for'], date, req.body.tag);
     if (!approved) {
-      return res.status(401).json("Invalid Request");
+      return res.status(401).json("Invalid Authentication Credentials");
     }
-    let hash = await tagHash(id, String(date));
-    return res.status(200).json({ tag: date, hash: hash });
   }
+  let hash = await tagHash(id, String(date));
+  return res.status(200).json({ tag: date, hash: hash });
 }

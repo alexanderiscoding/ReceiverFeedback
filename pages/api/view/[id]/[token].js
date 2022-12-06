@@ -21,7 +21,7 @@ export default function handler(req, res) {
     if (data.token != req.query.token) {
       return res.status(401).json("Invalid Authentication Credentials");
     }
-    res.status(200).json(data);
+    res.status(200).json(data.feedback);
   }).catch(function (error) {
     res.status(500).json(error);
   });

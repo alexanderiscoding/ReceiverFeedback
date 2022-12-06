@@ -1,6 +1,10 @@
 import { makerSender } from '../../lib/senders';
 
-async function update(id) {
+async function update(ip) {
+  const { createHash } = await import('node:crypto');
+  const hash = createHash('sha256');
+  hash.update(ip);
+  let ipHash = hash.copy().digest('hex');
   return fetch(process.env.CLOUD_HOST + '/api/database/update', {
     method: 'POST',
     headers: {
@@ -9,7 +13,7 @@ async function update(id) {
     },
     body: JSON.stringify({
       name: "ReceiverFeedback",
-      id: id,
+      id: ipHash,
       column: {
         feedback: Date.now()
       }
@@ -84,9 +88,6 @@ async function device(agent, ip) {
   const { createHash } = await import('node:crypto');
   const parser = require('ua-parser-js');
   let ua = parser(agent);
-  if (!ip) {
-    return false;
-  }
   if (ua.device.type == 'mobile') {
     if ([ua.device.vendor, ua.device.model, ua.os.name, ua.os.version].includes(undefined)) {
       return false;
@@ -115,7 +116,7 @@ async function tagHash(id, date) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  if ([req.body.level, req.body.text, req.body.source, req.body.version].includes(undefined)) {
+  if ([req.body.level, req.body.text, req.body.source, req.body.version, req.headers['user-agent'], req.headers['x-vercel-forwarded-for']].includes(undefined)) {
     return res.status(406).json("Missing Information");
   }
   let id = await device(req.headers['user-agent'], req.headers['x-vercel-forwarded-for']);
@@ -124,7 +125,7 @@ export default async function handler(req, res) {
   }
   let hash = await tagHash(id, req.headers.tag);
   if (new Date().getTime() > Number(req.headers.tag)) {
-    return res.status(401).json("Invalid Authentication Credentials");
+    return res.status(401).json("Authentication Credentials Expired");
   }
   if (req.headers.hash != hash) {
     return res.status(401).json("Invalid Authentication Credentials");
@@ -143,18 +144,14 @@ export default async function handler(req, res) {
           name: "ReceiverFeedback"
         },
         column: {
-          level: req.body.level,
-          text: req.body.text,
-          source: req.body.source,
-          version: req.body.version,
-          application: req.body.application,
+          feedback: { "level": req.body.level, "text": req.body.text, "source": req.body.source, "application": req.body.application, "version": req.body.version },
           timestamp: Date.now(),
           token: token
         }
       })
     }).then(async function (response) {
       const data = await response.json();
-      let salved = await update(id);
+      let salved = await update(req.headers['x-vercel-forwarded-for']);
       if (salved) {
         if (process.env.SENDER_HOST) {
           let structure = makerNotification(req.headers['user-agent'], req.body.application, req.body.version, req.body.message, data, token, req.headers.host);
