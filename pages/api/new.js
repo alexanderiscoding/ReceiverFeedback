@@ -116,7 +116,7 @@ async function tagHash(id, date) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  if ([req.body.level, req.body.text, req.body.source, req.body.version, req.headers['user-agent'], req.headers['x-vercel-forwarded-for']].includes(undefined)) {
+  if ([req.body.level, req.body.version, req.headers['user-agent'], req.headers['x-vercel-forwarded-for']].includes(undefined)) {
     return res.status(406).json("Missing Information");
   }
   let id = await device(req.headers['user-agent'], req.headers['x-vercel-forwarded-for']);
@@ -132,7 +132,20 @@ export default async function handler(req, res) {
   }
   const { randomBytes } = await import('node:crypto');
   const token = randomBytes(8).toString('hex');
-  if ([1, 2, 3, 4, 5].includes(req.body.level) && req.body.text.length > 0 && req.body.text.length < 250) {
+  if ([0, 1, 2, 3, 4, 5].includes(req.body.level)) {
+    let feedback = {
+      level: req.body.level,
+      version: req.body.version
+    };
+    if (req.body.text) {
+      feedback['text'] = req.body.text;
+    }
+    if (req.body.source) {
+      feedback['source'] = req.body.source;
+    }
+    if (req.body.application) {
+      feedback['application'] = req.body.application;
+    }
     return fetch(process.env.CLOUD_HOST + '/api/firestore/create', {
       method: 'POST',
       headers: {
@@ -144,7 +157,7 @@ export default async function handler(req, res) {
           name: "ReceiverFeedback"
         },
         column: {
-          feedback: { "level": req.body.level, "text": req.body.text, "source": req.body.source, "application": req.body.application, "version": req.body.version },
+          feedback: feedback,
           timestamp: Date.now(),
           token: token
         }
